@@ -49,3 +49,7 @@ export { AuditLayer, formatAuditSummary } from './audit/index.js';
 // Providers (for direct LLM integration)
 export { getProvider, listProviders, OpenAIProvider, AnthropicProvider, bundleToMessages } from './providers/index.js';
 export type { Provider, SendOptions, Message } from './providers/index.js';
+
+// Proxy (transparent optimization for any LLM tool)
+export { MessageOptimizer, startProxy } from './proxy/index.js';
+export type { ChatMessage, OptimizeResult, MessageOptimizerConfig, ProxyConfig } from './proxy/index.js';

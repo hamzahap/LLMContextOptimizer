@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { registerOptimizeCommand } from './commands/optimize.js';
 import { registerSendCommand } from './commands/send.js';
+import { registerProxyCommand } from './commands/proxy.js';
 import { registerInspectCommand } from './commands/inspect.js';
 import { registerConfigCommand } from './commands/config.js';
 
@@ -13,6 +14,7 @@ program
 
 registerOptimizeCommand(program);
 registerSendCommand(program);
+registerProxyCommand(program);
 registerInspectCommand(program);
 registerConfigCommand(program);
 

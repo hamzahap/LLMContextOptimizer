@@ -56,6 +56,47 @@ TypeError: Cannot read properties of undefined (reading 'role')
 
 The stack trace stays **exact**. The log gets **deduplicated**. Irrelevant code gets **summarized**. Everything fits in budget.
 
+## Proxy Mode (use with any LLM tool)
+
+The fastest way to use this — start the proxy, point your tool at it, done:
+
+```bash
+# Start the proxy
+llm-context-optimizer proxy --verbose
+
+# LLM Context Optimizer Proxy running on http://localhost:4000
+# All requests will be optimized before forwarding.
+```
+
+Then configure your tool:
+
+| Tool | How to connect |
+|------|---------------|
+| **Codex CLI** | `OPENAI_BASE_URL=http://localhost:4000/v1 codex` |
+| **Cursor** | Settings → Models → Override API Base URL → `http://localhost:4000/v1` |
+| **Continue.dev** | Set `apiBase: "http://localhost:4000/v1"` in config |
+| **Aider** | `aider --openai-api-base http://localhost:4000/v1` |
+| **Python OpenAI SDK** | `OpenAI(base_url="http://localhost:4000/v1")` |
+| **Any OpenAI-compatible tool** | Set base URL to `http://localhost:4000/v1` |
+| **Anthropic tools** | Set base URL to `http://localhost:4000` |
+
+The proxy automatically:
+- Deduplicates repeated content (logs, error messages, code blocks)
+- Compresses old conversation turns into summaries
+- Preserves recent messages and system prompts exactly
+- Removes empty messages
+- Respects per-model token limits
+- Streams responses back transparently
+
+```bash
+# Proxy options
+llm-context-optimizer proxy \
+  --port 4000 \           # Port (default: 4000)
+  --target auto \         # auto, openai, or anthropic
+  --preserve-last 6 \     # Keep last N messages exact
+  --verbose               # Log optimization stats
+```
+
 ## Installation
 
 ```bash
