@@ -58,7 +58,7 @@ The stack trace stays **exact**. The log gets **deduplicated**. Irrelevant code 
 
 ## Proxy Mode (use with any LLM tool)
 
-The fastest way to use this — start the proxy, point your tool at it, done:
+The proxy sits between your tool and the LLM API. It intercepts every request, optimizes the context, and forwards it — your tool doesn't know the difference.
 
 ```bash
 # Start the proxy
@@ -68,7 +68,7 @@ llm-context-optimizer proxy --verbose
 # All requests will be optimized before forwarding.
 ```
 
-Then configure your tool:
+Then point your tool at the proxy:
 
 | Tool | How to connect |
 |------|---------------|
@@ -97,6 +97,8 @@ llm-context-optimizer proxy \
   --verbose               # Log optimization stats
 ```
 
+**Note:** The proxy works with any tool that lets you configure a custom API base URL. Desktop apps that hardcode their API endpoints (ChatGPT app, Claude Desktop, GitHub Copilot) cannot be proxied.
+
 ## Installation
 
 ```bash
@@ -107,7 +109,7 @@ Requires Node.js 18+.
 
 ## CLI Usage
 
-### `optimize` — Prepare context
+### `optimize` — Prepare context from files and sources
 
 ```bash
 # Basic usage
@@ -130,18 +132,6 @@ llm-context-optimizer optimize \
   --format text \
   --audit \
   --output context.txt
-
-# Copy to clipboard (paste into ChatGPT, Claude, etc.)
-llm-context-optimizer optimize \
-  --task "Review this code" \
-  --files src/auth.ts \
-  --copy
-
-# Raw output for piping
-llm-context-optimizer optimize \
-  --task "Fix the bug" \
-  --files src/auth.ts \
-  --raw > context.txt
 ```
 
 ### `send` — Optimize and send directly to an LLM
@@ -168,13 +158,6 @@ llm-context-optimizer send \
   --task "Fix the auth bug" \
   --files src/auth.ts \
   --dry-run
-
-# Save response to file
-llm-context-optimizer send \
-  --task "Write tests for auth module" \
-  --files src/auth.ts \
-  --provider openai \
-  --output response.md
 ```
 
 Set API keys via environment variables:
@@ -185,10 +168,20 @@ export ANTHROPIC_API_KEY=sk-ant-...
 
 Or pass directly with `--api-key`.
 
+### `proxy` — Transparent optimization for any LLM tool
+
+```bash
+# Start with verbose logging
+llm-context-optimizer proxy --verbose
+
+# Custom port and target
+llm-context-optimizer proxy --port 8080 --target openai
+```
+
 ### Other commands
 
 ```bash
-# Inspect a saved bundle
+# Inspect a saved context bundle
 llm-context-optimizer inspect bundle.json
 
 # Show configuration
@@ -209,8 +202,6 @@ llm-context-optimizer config
 | `-b, --budget <tokens>` | Token budget | `8000` |
 | `--compression <level>` | `light`, `moderate`, or `aggressive` | `moderate` |
 | `--format <type>` | `json`, `markdown`, or `text` | `text` |
-| `--copy` | Copy optimized context to clipboard | `false` |
-| `--raw` | Output only context (for piping) | `false` |
 | `--audit` | Show audit log | `false` |
 | `--audit-file <path>` | Write audit log to file | — |
 | `-o, --output <path>` | Write output to file | stdout |
@@ -229,67 +220,16 @@ llm-context-optimizer config
 
 Plus all the same input options as `optimize` (`--task`, `--files`, `--budget`, etc.)
 
-## LLM Integration
+### CLI Options (proxy)
 
-### Direct API (one command)
-
-The fastest way — optimize and send in one step:
-
-```bash
-# Ask GPT-4o to fix a bug with optimized context
-llm-context-optimizer send \
-  -t "Fix the auth bug" \
-  -f src/auth.ts -e error.log \
-  -p openai -m gpt-4o
-
-# Ask Claude to review code
-llm-context-optimizer send \
-  -t "Review for security issues" \
-  -f src/auth.ts -f src/middleware.ts \
-  -p anthropic -m claude-sonnet-4-20250514
-```
-
-### Clipboard (paste into any chat)
-
-```bash
-# Copies optimized context — paste into ChatGPT, Claude.ai, etc.
-llm-context-optimizer optimize \
-  -t "Fix the auth bug" -f src/auth.ts -e error.log \
-  --copy
-```
-
-### Pipe into other tools
-
-```bash
-# Raw output pipes cleanly
-llm-context-optimizer optimize \
-  -t "Fix the bug" -f src/auth.ts --raw | your-tool
-
-# JSON for programmatic consumption
-llm-context-optimizer optimize \
-  -t "Fix the bug" -f src/auth.ts --format json -o context.json
-```
-
-### Programmatic (in your own code)
-
-```typescript
-import { createPipeline, getProvider } from 'llm-context-optimizer';
-
-const pipeline = createPipeline({ tokenBudget: 8000 });
-const { bundle } = await pipeline.run('Fix the auth bug', {
-  files: ['src/auth.ts'],
-  errors: ['error.log'],
-});
-
-// Send to any provider
-const provider = getProvider('anthropic');
-for await (const chunk of provider.stream(bundle, {
-  model: 'claude-sonnet-4-20250514',
-  apiKey: process.env.ANTHROPIC_API_KEY!,
-})) {
-  process.stdout.write(chunk);
-}
-```
+| Option | Description | Default |
+|--------|-------------|---------|
+| `--port <port>` | Port to listen on | `4000` |
+| `--target <target>` | `openai`, `anthropic`, or `auto` | `auto` |
+| `--api-key <key>` | API key (or tool passes its own) | — |
+| `--budget <tokens>` | Token budget override (0 = auto per model) | `0` |
+| `--preserve-last <n>` | Always preserve the last N messages | `6` |
+| `--verbose` | Log optimization stats per request | `false` |
 
 ## Programmatic API
 
@@ -319,6 +259,41 @@ console.log(`Included ${bundle.metadata.includedCount}, excluded ${bundle.metada
 console.log(`Saved ${bundle.metadata.compressionSavings} tokens`);
 ```
 
+### Send to an LLM programmatically
+
+```typescript
+import { createPipeline, getProvider } from 'llm-context-optimizer';
+
+const pipeline = createPipeline({ tokenBudget: 8000 });
+const { bundle } = await pipeline.run('Fix the auth bug', {
+  files: ['src/auth.ts'],
+  errors: ['error.log'],
+});
+
+const provider = getProvider('anthropic');
+for await (const chunk of provider.stream(bundle, {
+  model: 'claude-sonnet-4-20250514',
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+})) {
+  process.stdout.write(chunk);
+}
+```
+
+### Optimize conversation messages directly
+
+```typescript
+import { MessageOptimizer } from 'llm-context-optimizer';
+
+const optimizer = new MessageOptimizer({
+  preserveLastNTurns: 6,
+  preserveFirstNTurns: 2,
+});
+
+const result = optimizer.optimize(messages, 8000);
+// result.messages — optimized message array
+// result.stats — { originalTokens, optimizedTokens, saved, actions }
+```
+
 ### Custom Pipeline
 
 You can swap out any module:
@@ -327,12 +302,8 @@ You can swap out any module:
 import {
   OptimizePipeline,
   TaskClassifier,
-  ContextCollector,
   RelevanceRanker,
   CompressionEngine,
-  LosslessRulesEngine,
-  ContextPacker,
-  AuditLayer,
   resolveConfig,
 } from 'llm-context-optimizer';
 
@@ -347,7 +318,6 @@ const pipeline = new OptimizePipeline(
       taskAffinity: 0.1,
     }),
     compression: new CompressionEngine('aggressive'),
-    // ...other modules
   }
 );
 ```
@@ -367,6 +337,12 @@ Input (task + raw sources)
   → Audit Layer            — records every inclusion/exclusion decision
 Output (structured ContextBundle)
 ```
+
+For live conversations, the **MessageOptimizer** handles message-level optimization:
+- Deduplicates repeated content across messages
+- Compresses old conversation turns into summaries
+- Preserves system prompts and recent exchanges exactly
+- Fits within per-model token limits
 
 ### Protection Levels
 
@@ -446,7 +422,8 @@ src/
 ├── packer/                  # Token budget bin-packing
 ├── audit/                   # Decision tracking and reporting
 ├── providers/               # LLM providers (OpenAI, Anthropic) for direct send
-└── cli/                     # CLI commands (optimize, send, inspect, config)
+├── proxy/                   # Transparent proxy server + message optimizer
+└── cli/                     # CLI commands (optimize, send, proxy, inspect, config)
 ```
 
 ## License
