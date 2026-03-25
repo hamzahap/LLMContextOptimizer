@@ -1,4 +1,5 @@
 import { writeFile } from 'node:fs/promises';
+import { execSync } from 'node:child_process';
 import type { Command } from 'commander';
 import { createPipeline } from '../../pipeline.js';
 import { formatOutput, type OutputFormat } from '../formatters/index.js';
@@ -18,6 +19,8 @@ interface OptimizeOptions {
   audit?: boolean;
   auditFile?: string;
   output?: string;
+  copy?: boolean;
+  raw?: boolean;
 }
 
 export function registerOptimizeCommand(program: Command): void {
@@ -37,6 +40,8 @@ export function registerOptimizeCommand(program: Command): void {
     .option('--audit', 'Show audit log', false)
     .option('--audit-file <path>', 'Write audit log to file')
     .option('-o, --output <path>', 'Write output to file instead of stdout')
+    .option('--copy', 'Copy optimized context to clipboard', false)
+    .option('--raw', 'Output only the context content (for piping to other tools)', false)
     .action(async (opts: OptimizeOptions) => {
       try {
         const pipeline = createPipeline({
@@ -54,12 +59,33 @@ export function registerOptimizeCommand(program: Command): void {
           chatHistory: opts.chat,
         });
 
+        // Raw mode: just output the concatenated context sections (for piping)
+        if (opts.raw) {
+          const raw = result.bundle.sections.map(s => s.content).join('\n\n');
+          if (opts.copy) {
+            copyToClipboard(raw);
+            console.error(`Copied to clipboard (${result.bundle.totalTokens} tokens)`);
+          }
+          if (opts.output) {
+            await writeFile(opts.output, raw, 'utf-8');
+          } else {
+            process.stdout.write(raw);
+          }
+          return;
+        }
+
         const format = (opts.format ?? 'text') as OutputFormat;
         const output = formatOutput(
           format,
           result.bundle,
           opts.audit ? result.auditLog : undefined
         );
+
+        if (opts.copy) {
+          const contextOnly = result.bundle.sections.map(s => s.content).join('\n\n');
+          copyToClipboard(contextOnly);
+          console.error(`Copied to clipboard (${result.bundle.totalTokens} tokens)`);
+        }
 
         if (opts.output) {
           await writeFile(opts.output, output, 'utf-8');
@@ -78,4 +104,20 @@ export function registerOptimizeCommand(program: Command): void {
         process.exit(1);
       }
     });
+}
+
+function copyToClipboard(text: string): void {
+  try {
+    // Works on Windows, macOS, and Linux with xclip
+    const platform = process.platform;
+    if (platform === 'win32') {
+      execSync('clip', { input: text });
+    } else if (platform === 'darwin') {
+      execSync('pbcopy', { input: text });
+    } else {
+      execSync('xclip -selection clipboard', { input: text });
+    }
+  } catch {
+    console.error('Warning: Could not copy to clipboard');
+  }
 }

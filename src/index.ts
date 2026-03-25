@@ -45,3 +45,7 @@ export { CompressionEngine } from './compression/index.js';
 export { LosslessRulesEngine } from './rules/index.js';
 export { ContextPacker } from './packer/index.js';
 export { AuditLayer, formatAuditSummary } from './audit/index.js';
+
+// Providers (for direct LLM integration)
+export { getProvider, listProviders, OpenAIProvider, AnthropicProvider, bundleToMessages } from './providers/index.js';
+export type { Provider, SendOptions, Message } from './providers/index.js';

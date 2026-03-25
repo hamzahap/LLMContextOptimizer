@@ -66,6 +66,8 @@ Requires Node.js 18+.
 
 ## CLI Usage
 
+### `optimize` — Prepare context
+
 ```bash
 # Basic usage
 llm-context-optimizer optimize \
@@ -88,6 +90,63 @@ llm-context-optimizer optimize \
   --audit \
   --output context.txt
 
+# Copy to clipboard (paste into ChatGPT, Claude, etc.)
+llm-context-optimizer optimize \
+  --task "Review this code" \
+  --files src/auth.ts \
+  --copy
+
+# Raw output for piping
+llm-context-optimizer optimize \
+  --task "Fix the bug" \
+  --files src/auth.ts \
+  --raw > context.txt
+```
+
+### `send` — Optimize and send directly to an LLM
+
+```bash
+# Send to OpenAI (streams response)
+llm-context-optimizer send \
+  --task "Fix the auth bug" \
+  --files src/auth.ts \
+  --errors error.log \
+  --provider openai \
+  --model gpt-4o
+
+# Send to Anthropic Claude
+llm-context-optimizer send \
+  --task "Review this code for security issues" \
+  --files src/auth.ts src/middleware.ts \
+  --provider anthropic \
+  --model claude-sonnet-4-20250514 \
+  --budget 16000
+
+# Dry run — see what would be sent without calling the API
+llm-context-optimizer send \
+  --task "Fix the auth bug" \
+  --files src/auth.ts \
+  --dry-run
+
+# Save response to file
+llm-context-optimizer send \
+  --task "Write tests for auth module" \
+  --files src/auth.ts \
+  --provider openai \
+  --output response.md
+```
+
+Set API keys via environment variables:
+```bash
+export OPENAI_API_KEY=sk-...
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+Or pass directly with `--api-key`.
+
+### Other commands
+
+```bash
 # Inspect a saved bundle
 llm-context-optimizer inspect bundle.json
 
@@ -95,7 +154,7 @@ llm-context-optimizer inspect bundle.json
 llm-context-optimizer config
 ```
 
-### CLI Options
+### CLI Options (optimize)
 
 | Option | Description | Default |
 |--------|-------------|---------|
@@ -109,9 +168,87 @@ llm-context-optimizer config
 | `-b, --budget <tokens>` | Token budget | `8000` |
 | `--compression <level>` | `light`, `moderate`, or `aggressive` | `moderate` |
 | `--format <type>` | `json`, `markdown`, or `text` | `text` |
+| `--copy` | Copy optimized context to clipboard | `false` |
+| `--raw` | Output only context (for piping) | `false` |
 | `--audit` | Show audit log | `false` |
 | `--audit-file <path>` | Write audit log to file | — |
 | `-o, --output <path>` | Write output to file | stdout |
+
+### CLI Options (send)
+
+| Option | Description | Default |
+|--------|-------------|---------|
+| `-p, --provider <name>` | `openai` or `anthropic` | `openai` |
+| `-m, --model <name>` | Model name | per provider |
+| `--api-key <key>` | API key (or use env var) | — |
+| `--max-tokens <n>` | Max response tokens | `4096` |
+| `--temperature <n>` | Temperature | `0` |
+| `--no-stream` | Wait for full response | — |
+| `--dry-run` | Show messages without sending | `false` |
+
+Plus all the same input options as `optimize` (`--task`, `--files`, `--budget`, etc.)
+
+## LLM Integration
+
+### Direct API (one command)
+
+The fastest way — optimize and send in one step:
+
+```bash
+# Ask GPT-4o to fix a bug with optimized context
+llm-context-optimizer send \
+  -t "Fix the auth bug" \
+  -f src/auth.ts -e error.log \
+  -p openai -m gpt-4o
+
+# Ask Claude to review code
+llm-context-optimizer send \
+  -t "Review for security issues" \
+  -f src/auth.ts -f src/middleware.ts \
+  -p anthropic -m claude-sonnet-4-20250514
+```
+
+### Clipboard (paste into any chat)
+
+```bash
+# Copies optimized context — paste into ChatGPT, Claude.ai, etc.
+llm-context-optimizer optimize \
+  -t "Fix the auth bug" -f src/auth.ts -e error.log \
+  --copy
+```
+
+### Pipe into other tools
+
+```bash
+# Raw output pipes cleanly
+llm-context-optimizer optimize \
+  -t "Fix the bug" -f src/auth.ts --raw | your-tool
+
+# JSON for programmatic consumption
+llm-context-optimizer optimize \
+  -t "Fix the bug" -f src/auth.ts --format json -o context.json
+```
+
+### Programmatic (in your own code)
+
+```typescript
+import { createPipeline, getProvider } from 'llm-context-optimizer';
+
+const pipeline = createPipeline({ tokenBudget: 8000 });
+const { bundle } = await pipeline.run('Fix the auth bug', {
+  files: ['src/auth.ts'],
+  errors: ['error.log'],
+});
+
+// Send to any provider
+const provider = getProvider('anthropic');
+for await (const chunk of provider.stream(bundle, {
+  model: 'claude-sonnet-4-20250514',
+  apiKey: process.env.ANTHROPIC_API_KEY!,
+})) {
+  process.stdout.write(chunk);
+}
+```
 
 ## Programmatic API
 
@@ -267,7 +404,8 @@ src/
 ├── rules/                   # Lossless protection rules
 ├── packer/                  # Token budget bin-packing
 ├── audit/                   # Decision tracking and reporting
-└── cli/                     # CLI commands and output formatters
+├── providers/               # LLM providers (OpenAI, Anthropic) for direct send
+└── cli/                     # CLI commands (optimize, send, inspect, config)
 ```
 
 ## License
