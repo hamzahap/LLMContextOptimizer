@@ -42,7 +42,19 @@ export function startProxy(config: ProxyConfig): void {
 
     try {
       const body = await readBody(req);
-      const parsed = JSON.parse(body);
+      if (!body || body.trim().length === 0) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Empty request body' }));
+        return;
+      }
+      let parsed: Record<string, unknown>;
+      try {
+        parsed = JSON.parse(body);
+      } catch {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'Invalid JSON in request body' }));
+        return;
+      }
       const path = req.url ?? '';
 
       // Detect target from path or config
@@ -57,7 +69,7 @@ export function startProxy(config: ProxyConfig): void {
       // Optimize messages
       const messages = extractMessages(parsed, target);
       if (messages) {
-        const modelBudget = getModelBudget(parsed.model);
+        const modelBudget = getModelBudget(parsed.model as string | undefined);
         const result = optimizer.optimize(messages, modelBudget);
 
         if (config.verbose) {
@@ -91,10 +103,13 @@ export function startProxy(config: ProxyConfig): void {
       });
 
       // Stream response back
-      res.writeHead(proxyResponse.status, {
+      const responseHeaders: Record<string, string> = {
         'Content-Type': proxyResponse.headers.get('content-type') ?? 'application/json',
-        'Transfer-Encoding': parsed.stream ? 'chunked' : undefined,
-      });
+      };
+      if (parsed.stream) {
+        responseHeaders['Transfer-Encoding'] = 'chunked';
+      }
+      res.writeHead(proxyResponse.status, responseHeaders);
 
       if (proxyResponse.body) {
         const reader = proxyResponse.body.getReader();
