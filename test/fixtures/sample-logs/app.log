@@ -1,0 +1,18 @@
+2024-01-15T10:00:01Z INFO  Server started on port 3000
+2024-01-15T10:00:02Z INFO  Database connected
+2024-01-15T10:00:03Z INFO  Cache initialized
+2024-01-15T10:01:15Z INFO  Request: GET /api/users
+2024-01-15T10:01:15Z INFO  Request: GET /api/users
+2024-01-15T10:01:15Z INFO  Request: GET /api/users
+2024-01-15T10:01:15Z INFO  Request: GET /api/users
+2024-01-15T10:01:15Z INFO  Request: GET /api/users
+2024-01-15T10:01:16Z INFO  Response: 200 OK (45ms)
+2024-01-15T10:01:16Z INFO  Response: 200 OK (45ms)
+2024-01-15T10:01:16Z INFO  Response: 200 OK (45ms)
+2024-01-15T10:01:16Z INFO  Response: 200 OK (45ms)
+2024-01-15T10:01:16Z INFO  Response: 200 OK (45ms)
+2024-01-15T10:02:30Z WARN  High memory usage: 85%
+2024-01-15T10:03:00Z ERROR Failed to authenticate user: token expired
+2024-01-15T10:03:00Z ERROR Stack trace: TypeError: Cannot read properties of undefined
+2024-01-15T10:03:01Z INFO  Request: POST /api/login
+2024-01-15T10:03:02Z INFO  Response: 401 Unauthorized

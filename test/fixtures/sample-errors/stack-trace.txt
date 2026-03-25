@@ -1,0 +1,11 @@
+TypeError: Cannot read properties of undefined (reading 'role')
+    at validateToken (src/auth.ts:38:42)
+    at authenticateMiddleware (src/middleware/auth.ts:15:20)
+    at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+    at next (node_modules/express/lib/router/route.js:144:13)
+    at Route.dispatch (node_modules/express/lib/router/route.js:114:3)
+    at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+    at /app/node_modules/express/lib/router/index.js:284:15
+    at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+    at next (node_modules/express/lib/router/index.js:280:10)
+    at expressInit (node_modules/express/lib/middleware/init.js:40:5)
