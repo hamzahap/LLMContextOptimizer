@@ -60,10 +60,10 @@ export class MessageOptimizer {
     const originalTokens = this.countAllTokens(result);
     const originalCount = result.length;
 
-    // 1. Remove empty messages
+    // 1. Remove empty messages (only truly empty — no content at all)
     if (this.config.removeEmptyMessages) {
       const before = result.length;
-      result = result.filter(m => getTextContent(m.content).trim().length > 0);
+      result = result.filter(m => !isMessageEmpty(m));
       if (result.length < before) {
         actions.push(`removed ${before - result.length} empty messages`);
       }
@@ -242,6 +242,19 @@ export class MessageOptimizer {
   private countAllTokens(messages: ChatMessage[]): number {
     return messages.reduce((sum, m) => sum + countTokens(getTextContent(m.content)), 0);
   }
+}
+
+/** A message is only empty if it has no content whatsoever.
+ *  Messages with tool_use, tool_result, thinking, images, etc. are NOT empty. */
+function isMessageEmpty(msg: ChatMessage): boolean {
+  if (typeof msg.content === 'string') {
+    return msg.content.trim().length === 0;
+  }
+  if (Array.isArray(msg.content)) {
+    // If there are ANY content blocks at all, it's not empty
+    return msg.content.length === 0;
+  }
+  return !msg.content;
 }
 
 function getTextContent(content: string | ContentBlock[]): string {
