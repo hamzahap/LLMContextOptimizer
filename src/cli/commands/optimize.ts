@@ -4,6 +4,7 @@ import type { Command } from 'commander';
 import { createPipeline } from '../../pipeline.js';
 import { formatOutput, type OutputFormat } from '../formatters/index.js';
 import { formatAuditSummary } from '../../audit/index.js';
+import { parseIntegerOption } from '../utils/number-options.js';
 
 interface OptimizeOptions {
   task: string;
@@ -44,8 +45,10 @@ export function registerOptimizeCommand(program: Command): void {
     .option('--raw', 'Output only the context content (for piping to other tools)', false)
     .action(async (opts: OptimizeOptions) => {
       try {
+        const tokenBudget = parseIntegerOption(opts.budget ?? '8000', '--budget', { min: 1 });
+
         const pipeline = createPipeline({
-          tokenBudget: parseInt(opts.budget ?? '8000', 10),
+          tokenBudget,
           compressionLevel: (opts.compression as 'light' | 'moderate' | 'aggressive') ?? 'moderate',
           outputFormat: (opts.format as OutputFormat) ?? 'text',
         });

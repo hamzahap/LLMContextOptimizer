@@ -67,6 +67,10 @@ export class AuditLayer implements IAuditLayer {
 
 export function formatAuditSummary(log: AuditLog): string {
   const s = log.summary;
+  const usagePercent = s.tokenBudget > 0
+    ? `${((s.tokensUsed / s.tokenBudget) * 100).toFixed(1)}%`
+    : 'N/A';
+
   const lines = [
     '=== Context Optimization Audit ===',
     `Task: ${log.taskProfile.description.slice(0, 100)}`,
@@ -78,7 +82,7 @@ export function formatAuditSummary(log: AuditLog): string {
     `Excluded: ${s.excluded}`,
     `Compressed: ${s.compressed}`,
     `Token budget: ${s.tokenBudget}`,
-    `Tokens used: ${s.tokensUsed} (${((s.tokensUsed / s.tokenBudget) * 100).toFixed(1)}%)`,
+    `Tokens used: ${s.tokensUsed} (${usagePercent})`,
     `Tokens saved: ${s.tokensSaved}`,
     '',
     '--- Decisions ---',
@@ -86,8 +90,9 @@ export function formatAuditSummary(log: AuditLog): string {
 
   for (const entry of log.entries) {
     const tokens = entry.tokensBefore
-      ? ` [${entry.tokensBefore}→${entry.tokensAfter ?? entry.tokensBefore} tokens]`
+      ? ` [${entry.tokensBefore}->${entry.tokensAfter ?? entry.tokensBefore} tokens]`
       : '';
+
     lines.push(`  [${entry.decision.toUpperCase()}] ${entry.contextId}${tokens}`);
     lines.push(`    Reason: ${entry.reason}`);
   }

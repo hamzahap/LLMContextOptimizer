@@ -69,4 +69,16 @@ describe('OptimizePipeline', () => {
     const result = await pipeline.run('Refactor the user module to extract validation', {});
     expect(result.bundle.metadata.taskProfile.type).toBe('refactor');
   });
+
+  it('does not accumulate audit entries across multiple runs', async () => {
+    const pipeline = createPipeline({ tokenBudget: 1000 });
+    const file = resolve(FIXTURES, 'sample-files/auth.ts');
+
+    const first = await pipeline.run('First task', { files: [file] });
+    const second = await pipeline.run('Second task', { files: [file] });
+
+    expect(first.auditLog.summary.totalCandidates).toBe(1);
+    expect(second.auditLog.summary.totalCandidates).toBe(1);
+    expect(second.auditLog.entries).toHaveLength(1);
+  });
 });

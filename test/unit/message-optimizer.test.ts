@@ -109,4 +109,50 @@ describe('MessageOptimizer', () => {
     const result = optimizer.optimize(messages, 2000);
     expect(result.stats.optimizedTokens).toBeLessThan(result.stats.originalTokens);
   });
+
+  it('preserves system message ordering when compressing middle turns', () => {
+    const messages = [
+      { role: 'system' as const, content: 'sys-1' },
+      { role: 'user' as const, content: 'u-1' },
+      { role: 'assistant' as const, content: 'a-1' },
+      { role: 'system' as const, content: 'sys-2' },
+      { role: 'user' as const, content: 'u-2' },
+      { role: 'assistant' as const, content: 'a-2' },
+      { role: 'user' as const, content: 'u-3' },
+      { role: 'assistant' as const, content: 'a-3' },
+      { role: 'user' as const, content: 'u-4' },
+      { role: 'assistant' as const, content: 'a-4' },
+      { role: 'user' as const, content: 'u-5' },
+      { role: 'assistant' as const, content: 'a-5' },
+    ];
+
+    const result = optimizer.optimize(messages);
+    const labels = result.messages.map((m) => String(m.content));
+    const indexSys1 = labels.indexOf('sys-1');
+    const indexSys2 = labels.indexOf('sys-2');
+
+    expect(indexSys1).toBeGreaterThanOrEqual(0);
+    expect(indexSys2).toBeGreaterThan(indexSys1);
+  });
+
+  it('transforms text blocks independently and preserves non-text blocks', () => {
+    const messages = [
+      {
+        role: 'user' as const,
+        content: [
+          { type: 'text', text: 'alpha\nalpha\nalpha' },
+          { type: 'image', source: 'img-1' },
+          { type: 'text', text: 'beta\nbeta\nbeta' },
+        ],
+      },
+    ];
+
+    const result = optimizer.optimize(messages);
+    const content = result.messages[0].content as Array<{ type: string; text?: string; source?: string }>;
+
+    expect(content).toHaveLength(3);
+    expect(content[0].text).toContain('repeated');
+    expect(content[1]).toEqual({ type: 'image', source: 'img-1' });
+    expect(content[2].text).toContain('repeated');
+  });
 });

@@ -4,6 +4,7 @@ import { createPipeline } from '../../pipeline.js';
 import { getProvider } from '../../providers/index.js';
 import { bundleToMessages } from '../../providers/types.js';
 import { formatAuditSummary } from '../../audit/index.js';
+import { parseIntegerOption, parseNumberOption } from '../utils/number-options.js';
 
 interface SendOptions {
   task: string;
@@ -62,6 +63,10 @@ export function registerSendCommand(program: Command): void {
     .option('-o, --output <path>', 'Write LLM response to file')
     .action(async (opts: SendOptions) => {
       try {
+        const tokenBudget = parseIntegerOption(opts.budget ?? '8000', '--budget', { min: 1 });
+        const maxTokens = parseIntegerOption(opts.maxTokens ?? '4096', '--max-tokens', { min: 1 });
+        const temperature = parseNumberOption(opts.temperature ?? '0', '--temperature', { min: 0, max: 2 });
+
         const providerName = opts.provider ?? 'openai';
         const model = opts.model ?? DEFAULT_MODELS[providerName] ?? 'gpt-4o';
 
@@ -75,7 +80,7 @@ export function registerSendCommand(program: Command): void {
 
         // Run optimization pipeline
         const pipeline = createPipeline({
-          tokenBudget: parseInt(opts.budget ?? '8000', 10),
+          tokenBudget,
           compressionLevel: (opts.compression as 'light' | 'moderate' | 'aggressive') ?? 'moderate',
         });
 
@@ -108,8 +113,8 @@ export function registerSendCommand(program: Command): void {
         const sendOpts = {
           model,
           apiKey: apiKey!,
-          maxTokens: parseInt(opts.maxTokens ?? '4096', 10),
-          temperature: parseFloat(opts.temperature ?? '0'),
+          maxTokens,
+          temperature,
           stream: opts.stream !== false,
         };
 

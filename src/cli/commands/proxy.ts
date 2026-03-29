@@ -1,5 +1,6 @@
 import type { Command } from 'commander';
 import { startProxy } from '../../proxy/server.js';
+import { parseIntegerOption } from '../utils/number-options.js';
 
 interface ProxyOptions {
   port?: string;
@@ -21,19 +22,24 @@ export function registerProxyCommand(program: Command): void {
     .option('--preserve-last <n>', 'Always preserve the last N messages', '6')
     .option('--verbose', 'Log optimization stats for each request', false)
     .action((opts: ProxyOptions) => {
-      const port = parseInt(opts.port ?? '4000', 10);
-      const budget = parseInt(opts.budget ?? '0', 10);
-      const preserveLast = parseInt(opts.preserveLast ?? '6', 10);
+      try {
+        const port = parseIntegerOption(opts.port ?? '4000', '--port', { min: 1, max: 65535 });
+        const budget = parseIntegerOption(opts.budget ?? '0', '--budget', { min: 0 });
+        const preserveLast = parseIntegerOption(opts.preserveLast ?? '6', '--preserve-last', { min: 0 });
 
-      startProxy({
-        port,
-        target: (opts.target as 'openai' | 'anthropic' | 'auto') ?? 'auto',
-        apiKey: opts.apiKey ?? process.env.OPENAI_API_KEY ?? process.env.ANTHROPIC_API_KEY,
-        optimizer: {
-          tokenBudget: budget,
-          preserveLastNTurns: preserveLast,
-        },
-        verbose: opts.verbose ?? false,
-      });
+        startProxy({
+          port,
+          target: (opts.target as 'openai' | 'anthropic' | 'auto') ?? 'auto',
+          apiKey: opts.apiKey ?? process.env.OPENAI_API_KEY ?? process.env.ANTHROPIC_API_KEY,
+          optimizer: {
+            tokenBudget: budget,
+            preserveLastNTurns: preserveLast,
+          },
+          verbose: opts.verbose ?? false,
+        });
+      } catch (error) {
+        console.error('Error:', error instanceof Error ? error.message : error);
+        process.exit(1);
+      }
     });
 }

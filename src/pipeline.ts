@@ -58,6 +58,8 @@ export class OptimizePipeline {
   }
 
   async run(taskDescription: string, collectorOptions: CollectorOptions): Promise<PipelineResult> {
+    this.audit.reset();
+
     // 1. Classify the task
     const taskProfile = this.classifier.classify(taskDescription);
 

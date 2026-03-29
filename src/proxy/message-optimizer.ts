@@ -4,7 +4,7 @@ import { summarizeBlock } from '../compression/techniques/summarizer.js';
 import { truncateContent } from '../compression/techniques/truncator.js';
 
 export interface ChatMessage {
-  role: 'system' | 'user' | 'assistant';
+  role: string;
   content: string | ContentBlock[];
 }
 
@@ -37,10 +37,10 @@ export interface MessageOptimizerConfig {
 }
 
 const DEFAULT_CONFIG: MessageOptimizerConfig = {
-  tokenBudget: 0, // 0 = auto (use model's limit)
+  tokenBudget: 0,
   preserveSystemMessages: true,
-  preserveLastNTurns: 6,   // Always keep the last 6 messages (3 back-and-forth)
-  preserveFirstNTurns: 2,  // Keep the first system + user message
+  preserveLastNTurns: 6,
+  preserveFirstNTurns: 2,
   deduplicateContent: true,
   compressOldTurns: true,
   removeEmptyMessages: true,
@@ -60,16 +60,14 @@ export class MessageOptimizer {
     const originalTokens = this.countAllTokens(result);
     const originalCount = result.length;
 
-    // 1. Remove empty messages (only truly empty — no content at all)
     if (this.config.removeEmptyMessages) {
       const before = result.length;
-      result = result.filter(m => !isMessageEmpty(m));
+      result = result.filter((m) => !isMessageEmpty(m));
       if (result.length < before) {
         actions.push(`removed ${before - result.length} empty messages`);
       }
     }
 
-    // 2. Deduplicate repeated content across messages
     if (this.config.deduplicateContent) {
       const deduped = this.deduplicateMessages(result);
       if (deduped.changed) {
@@ -78,28 +76,25 @@ export class MessageOptimizer {
       }
     }
 
-    // 3. Deduplicate lines within individual messages (logs, repeated output)
-    result = result.map(msg => {
-      const text = getTextContent(msg.content);
-      const { result: deduped, applied } = deduplicateLines(text);
-      if (applied) {
+    result = result.map((msg) => {
+      const transformed = transformTextContent(msg.content, deduplicateLines);
+      if (transformed.changed) {
         actions.push(`deduplicated lines in ${msg.role} message`);
-        return { ...msg, content: setTextContent(msg.content, deduped) };
+        return { ...msg, content: transformed.content };
       }
       return msg;
     });
 
-    // 4. Compress old conversation turns (keep first N and last N)
     if (this.config.compressOldTurns && result.length > this.config.preserveFirstNTurns + this.config.preserveLastNTurns) {
       result = this.compressMiddleTurns(result, actions);
     }
 
-    // 5. If still over budget, progressively truncate oldest non-protected messages
     if (budget > 0) {
       result = this.fitToBudget(result, budget, actions);
     }
 
     const optimizedTokens = this.countAllTokens(result);
+
     return {
       messages: result,
       stats: {
@@ -114,23 +109,20 @@ export class MessageOptimizer {
   }
 
   private deduplicateMessages(messages: ChatMessage[]): { messages: ChatMessage[]; changed: boolean; count: number } {
-    const seen = new Map<string, number>();
+    const seen = new Set<string>();
     const result: ChatMessage[] = [];
     let dedupCount = 0;
 
     for (const msg of messages) {
       const text = getTextContent(msg.content);
-      // Hash by first 200 chars + role to detect duplicates
       const key = `${msg.role}:${text.slice(0, 200)}`;
-      const prevIndex = seen.get(key);
 
-      if (prevIndex !== undefined && text.length > 50) {
-        // Skip duplicate, but keep a marker
+      if (seen.has(key) && text.length > 50) {
         dedupCount++;
         continue;
       }
 
-      seen.set(key, result.length);
+      seen.add(key);
       result.push(msg);
     }
 
@@ -138,33 +130,52 @@ export class MessageOptimizer {
   }
 
   private compressMiddleTurns(messages: ChatMessage[], actions: string[]): ChatMessage[] {
-    // Separate system messages
-    const systemMsgs = this.config.preserveSystemMessages
-      ? messages.filter(m => m.role === 'system')
-      : [];
-    const nonSystem = messages.filter(m => m.role !== 'system');
+    const compressibleIndices: number[] = [];
 
-    const keepFirst = Math.min(this.config.preserveFirstNTurns, nonSystem.length);
-    const keepLast = Math.min(this.config.preserveLastNTurns, nonSystem.length);
-
-    if (keepFirst + keepLast >= nonSystem.length) {
-      return messages; // Nothing to compress
+    for (let i = 0; i < messages.length; i++) {
+      if (!this.config.preserveSystemMessages || messages[i].role !== 'system') {
+        compressibleIndices.push(i);
+      }
     }
 
-    const first = nonSystem.slice(0, keepFirst);
-    const middle = nonSystem.slice(keepFirst, -keepLast);
-    const last = nonSystem.slice(-keepLast);
+    const keepFirst = Math.min(this.config.preserveFirstNTurns, compressibleIndices.length);
+    const keepLast = Math.min(this.config.preserveLastNTurns, compressibleIndices.length);
 
-    // Summarize middle turns
-    const middleSummary = this.summarizeMiddle(middle);
-    actions.push(`compressed ${middle.length} middle turns into summary`);
+    if (keepFirst + keepLast >= compressibleIndices.length) {
+      return messages;
+    }
+
+    const middleIndices = compressibleIndices.slice(keepFirst, compressibleIndices.length - keepLast);
+    if (middleIndices.length === 0) {
+      return messages;
+    }
+
+    const middleMessages = middleIndices.map((index) => messages[index]);
+    const middleSummary = this.summarizeMiddle(middleMessages);
+    actions.push(`compressed ${middleMessages.length} middle turns into summary`);
 
     const summaryMessage: ChatMessage = {
       role: 'user',
-      content: `[Previous conversation summary (${middle.length} messages compressed)]\n${middleSummary}`,
+      content: `[Previous conversation summary (${middleMessages.length} messages compressed)]\n${middleSummary}`,
     };
 
-    return [...systemMsgs, ...first, summaryMessage, ...last];
+    const middleSet = new Set(middleIndices);
+    const firstMiddleIndex = middleIndices[0];
+    const next: ChatMessage[] = [];
+
+    for (let i = 0; i < messages.length; i++) {
+      if (i === firstMiddleIndex) {
+        next.push(summaryMessage);
+      }
+
+      if (middleSet.has(i)) {
+        continue;
+      }
+
+      next.push(messages[i]);
+    }
+
+    return next;
   }
 
   private summarizeMiddle(messages: ChatMessage[]): string {
@@ -172,7 +183,6 @@ export class MessageOptimizer {
 
     for (const msg of messages) {
       const text = getTextContent(msg.content);
-      // Take first 2 lines or 150 chars as summary of each message
       const preview = text.split('\n').slice(0, 2).join(' ').slice(0, 150);
       if (preview.trim()) {
         lines.push(`- [${msg.role}]: ${preview}${text.length > 150 ? '...' : ''}`);
@@ -184,55 +194,63 @@ export class MessageOptimizer {
 
   private fitToBudget(messages: ChatMessage[], budget: number, actions: string[]): ChatMessage[] {
     let total = this.countAllTokens(messages);
-    if (total <= budget) return messages;
+    if (total <= budget) {
+      return messages;
+    }
 
     const result = [...messages];
-
-    // Find compressible messages (not system, not in last N)
     const protectedEnd = Math.min(this.config.preserveLastNTurns, result.length);
 
-    // Work backwards from oldest non-protected messages
     for (let i = 0; i < result.length - protectedEnd && total > budget; i++) {
       const msg = result[i];
-      if (msg.role === 'system' && this.config.preserveSystemMessages) continue;
+      if (msg.role === 'system' && this.config.preserveSystemMessages) {
+        continue;
+      }
 
-      const text = getTextContent(msg.content);
-      const tokensBefore = countTokens(text);
+      const tokensBefore = countContentTokens(msg.content);
+      const summarized = transformTextContent(msg.content, (text) => summarizeBlock(text, {
+        maxLines: 20,
+        keepFirst: 8,
+        keepLast: 5,
+      }));
 
-      // Try summarizing first
-      const { result: summarized, applied: wasSummarized } = summarizeBlock(text, {
-        maxLines: 20, keepFirst: 8, keepLast: 5,
-      });
-      if (wasSummarized) {
-        result[i] = { ...msg, content: setTextContent(msg.content, summarized) };
-        total -= tokensBefore - countTokens(summarized);
+      if (summarized.changed) {
+        const tokensAfter = countContentTokens(summarized.content);
+        result[i] = { ...msg, content: summarized.content };
+        total -= tokensBefore - tokensAfter;
         actions.push(`summarized old ${msg.role} message`);
         continue;
       }
 
-      // If still over, truncate
       if (total > budget) {
-        const maxTokens = Math.max(100, Math.floor(tokensBefore * 0.3));
-        const { result: truncated, applied: wasTruncated } = truncateContent(text, { maxTokens });
-        if (wasTruncated) {
-          result[i] = { ...msg, content: setTextContent(msg.content, truncated) };
-          total -= tokensBefore - countTokens(truncated);
+        const truncated = transformTextContent(msg.content, (text) => {
+          const maxTokens = Math.max(100, Math.floor(countTokens(text) * 0.3));
+          return truncateContent(text, { maxTokens });
+        });
+
+        if (truncated.changed) {
+          const tokensAfter = countContentTokens(truncated.content);
+          result[i] = { ...msg, content: truncated.content };
+          total -= tokensBefore - tokensAfter;
           actions.push(`truncated old ${msg.role} message`);
         }
       }
     }
 
-    // Last resort: drop oldest non-protected messages entirely
     if (total > budget) {
       const dropped: number[] = [];
       for (let i = 0; i < result.length - protectedEnd && total > budget; i++) {
-        if (result[i].role === 'system' && this.config.preserveSystemMessages) continue;
-        total -= countTokens(getTextContent(result[i].content));
+        if (result[i].role === 'system' && this.config.preserveSystemMessages) {
+          continue;
+        }
+
+        total -= countContentTokens(result[i].content);
         dropped.push(i);
       }
+
       if (dropped.length > 0) {
         actions.push(`dropped ${dropped.length} oldest messages to fit budget`);
-        return result.filter((_, i) => !dropped.includes(i));
+        return result.filter((_, index) => !dropped.includes(index));
       }
     }
 
@@ -240,46 +258,71 @@ export class MessageOptimizer {
   }
 
   private countAllTokens(messages: ChatMessage[]): number {
-    return messages.reduce((sum, m) => sum + countTokens(getTextContent(m.content)), 0);
+    return messages.reduce((sum, m) => sum + countContentTokens(m.content), 0);
   }
 }
 
-/** A message is only empty if it has no content whatsoever.
- *  Messages with tool_use, tool_result, thinking, images, etc. are NOT empty. */
 function isMessageEmpty(msg: ChatMessage): boolean {
   if (typeof msg.content === 'string') {
     return msg.content.trim().length === 0;
   }
+
   if (Array.isArray(msg.content)) {
-    // If there are ANY content blocks at all, it's not empty
     return msg.content.length === 0;
   }
+
   return !msg.content;
 }
 
-function getTextContent(content: string | ContentBlock[]): string {
-  if (typeof content === 'string') return content;
-  if (Array.isArray(content)) {
-    return content
-      .filter(b => b.type === 'text' && b.text)
-      .map(b => b.text!)
-      .join('\n');
-  }
-  return String(content);
+function countContentTokens(content: string | ContentBlock[]): number {
+  return countTokens(getTextContent(content));
 }
 
-function setTextContent(original: string | ContentBlock[], newText: string): string | ContentBlock[] {
-  if (typeof original === 'string') return newText;
-  if (Array.isArray(original)) {
-    // Replace text blocks, keep non-text blocks (images, etc.)
-    let textIndex = 0;
-    const textParts = newText.split('\n---BLOCK_SPLIT---\n');
-    return original.map(block => {
-      if (block.type === 'text') {
-        return { ...block, text: textParts[textIndex++] ?? newText };
-      }
-      return block;
-    });
+function getTextContent(content: string | ContentBlock[]): string {
+  if (typeof content === 'string') {
+    return content;
   }
-  return newText;
+
+  if (!Array.isArray(content)) {
+    return '';
+  }
+
+  return content
+    .filter((block) => block.type === 'text' && typeof block.text === 'string')
+    .map((block) => block.text as string)
+    .join('\n');
+}
+
+function transformTextContent(
+  original: string | ContentBlock[],
+  transform: (text: string) => { result: string; applied: boolean },
+): { content: string | ContentBlock[]; changed: boolean } {
+  if (typeof original === 'string') {
+    const next = transform(original);
+    return { content: next.result, changed: next.applied };
+  }
+
+  if (!Array.isArray(original)) {
+    return { content: original, changed: false };
+  }
+
+  let changed = false;
+  const nextBlocks = original.map((block) => {
+    if (block.type !== 'text' || typeof block.text !== 'string') {
+      return block;
+    }
+
+    const next = transform(block.text);
+    if (!next.applied) {
+      return block;
+    }
+
+    changed = true;
+    return {
+      ...block,
+      text: next.result,
+    };
+  });
+
+  return { content: nextBlocks, changed };
 }

@@ -143,6 +143,7 @@ export interface IAuditLayer {
   record(entry: AuditEntry): void;
   finalize(task: TaskProfile, budget: number): AuditLog;
   getLog(): AuditLog | null;
+  reset(): void;
 }
 
 // === Config ===
