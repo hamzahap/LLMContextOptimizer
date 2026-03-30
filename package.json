@@ -1,6 +1,6 @@
 {
   "name": "llm-context-optimizer",
-  "version": "1.0.0",
+  "version": "1.0.2",
   "description": "Intelligent context preprocessing for LLMs - reduces tokens, improves relevance, preserves critical information",
   "type": "module",
   "main": "dist/index.js",
