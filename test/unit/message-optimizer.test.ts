@@ -31,6 +31,10 @@ describe('MessageOptimizer', () => {
   });
 
   it('deduplicates identical messages', () => {
+    const dedupOptimizer = new MessageOptimizer({
+      preserveLastNTurns: 0,
+      preserveFirstNTurns: 0,
+    });
     const messages = [
       { role: 'system' as const, content: 'You are a helper.' },
       { role: 'user' as const, content: 'Here is a very long repeated message that should be detected as duplicate content by the system' },
@@ -39,27 +43,54 @@ describe('MessageOptimizer', () => {
       { role: 'assistant' as const, content: 'Sure thing.' },
       { role: 'user' as const, content: 'Now do something new' },
     ];
-    const result = optimizer.optimize(messages);
+    const result = dedupOptimizer.optimize(messages);
     expect(result.messages.length).toBeLessThan(messages.length);
   });
 
+  it('does not drop preserved recent duplicate messages during deduplication', () => {
+    const protectedOptimizer = new MessageOptimizer({
+      preserveLastNTurns: 2,
+      preserveFirstNTurns: 0,
+    });
+    const duplicate = 'target duplicate long long long long long long long long long long message';
+    const messages = [
+      { role: 'user' as const, content: 'older unique message' },
+      { role: 'assistant' as const, content: 'assistant reply' },
+      { role: 'user' as const, content: duplicate },
+      { role: 'assistant' as const, content: 'assistant final' },
+      { role: 'user' as const, content: duplicate },
+    ];
+
+    const result = protectedOptimizer.optimize(messages);
+
+    expect(result.messages.slice(-2)).toEqual([
+      { role: 'assistant', content: 'assistant final' },
+      { role: 'user', content: duplicate },
+    ]);
+  });
+
   it('compresses old middle turns in long conversations', () => {
+    const compressingOptimizer = new MessageOptimizer({
+      preserveFirstNTurns: 1,
+      preserveLastNTurns: 2,
+    });
+    const longDetails = 'Detailed explanation about architecture, constraints, edge cases, tradeoffs, examples, and follow-up considerations that should compress well. '.repeat(4);
     const messages = [
       { role: 'system' as const, content: 'You are a coding assistant.' },
-      { role: 'user' as const, content: 'First question about auth' },
-      { role: 'assistant' as const, content: 'Here is the answer about auth...' },
-      { role: 'user' as const, content: 'Second question about database' },
-      { role: 'assistant' as const, content: 'Here is the answer about database...' },
-      { role: 'user' as const, content: 'Third question about caching' },
-      { role: 'assistant' as const, content: 'Here is the answer about caching...' },
-      { role: 'user' as const, content: 'Fourth question about testing' },
-      { role: 'assistant' as const, content: 'Here is the answer about testing...' },
-      { role: 'user' as const, content: 'Fifth question about deployment' },
-      { role: 'assistant' as const, content: 'Here is the answer about deployment...' },
+      { role: 'user' as const, content: `First question about auth. ${longDetails}` },
+      { role: 'assistant' as const, content: `Here is the answer about auth. ${longDetails}` },
+      { role: 'user' as const, content: `Second question about database. ${longDetails}` },
+      { role: 'assistant' as const, content: `Here is the answer about database. ${longDetails}` },
+      { role: 'user' as const, content: `Third question about caching. ${longDetails}` },
+      { role: 'assistant' as const, content: `Here is the answer about caching. ${longDetails}` },
+      { role: 'user' as const, content: `Fourth question about testing. ${longDetails}` },
+      { role: 'assistant' as const, content: `Here is the answer about testing. ${longDetails}` },
+      { role: 'user' as const, content: `Fifth question about deployment. ${longDetails}` },
+      { role: 'assistant' as const, content: `Here is the answer about deployment. ${longDetails}` },
       { role: 'user' as const, content: 'Now help me with the final thing' },
       { role: 'assistant' as const, content: 'Sure, the final answer...' },
     ];
-    const result = optimizer.optimize(messages);
+    const result = compressingOptimizer.optimize(messages);
     // Should have fewer messages with a summary in the middle
     expect(result.messages.length).toBeLessThan(messages.length);
     // Should preserve system message
@@ -154,5 +185,41 @@ describe('MessageOptimizer', () => {
     expect(content[0].text).toContain('repeated');
     expect(content[1]).toEqual({ type: 'image', source: 'img-1' });
     expect(content[2].text).toContain('repeated');
+  });
+
+  it('treats input_text blocks as text for counting and compression', () => {
+    const messages = [
+      {
+        role: 'user' as const,
+        content: [
+          { type: 'input_text', text: 'hello\nhello\nhello' },
+        ],
+      },
+    ];
+
+    const result = optimizer.optimize(messages);
+    const content = result.messages[0].content as Array<{ type: string; text?: string }>;
+
+    expect(result.stats.originalTokens).toBeGreaterThan(0);
+    expect(content[0].text).toContain('repeated');
+  });
+
+  it('skips middle compression when the summary would be longer', () => {
+    const verboseOptimizer = new MessageOptimizer({
+      preserveFirstNTurns: 0,
+      preserveLastNTurns: 2,
+    });
+    const messages = [
+      { role: 'user' as const, content: 'short one' },
+      { role: 'assistant' as const, content: 'short two' },
+      { role: 'user' as const, content: 'short three' },
+      { role: 'assistant' as const, content: 'short four' },
+      { role: 'user' as const, content: 'keep recent' },
+    ];
+
+    const result = verboseOptimizer.optimize(messages);
+
+    expect(result.stats.actions).not.toContain('compressed 3 middle turns into summary');
+    expect(result.stats.optimizedTokens).toBeLessThanOrEqual(result.stats.originalTokens);
   });
 });

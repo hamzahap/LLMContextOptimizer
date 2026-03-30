@@ -98,7 +98,9 @@ export function registerSendCommand(program: Command): void {
         console.error(`[optimizer] Task: ${meta.taskProfile.type} (${(meta.taskProfile.confidence * 100).toFixed(0)}%)`);
         console.error(`[optimizer] Context: ${meta.includedCount} items, ${result.bundle.totalTokens} tokens (${result.bundle.budgetUsed.toFixed(1)}% of budget)`);
         console.error(`[optimizer] Saved: ${meta.compressionSavings} tokens`);
-        console.error(`[optimizer] Sending to ${providerName}/${model}...`);
+        console.error(opts.dryRun
+          ? `[optimizer] Dry run for ${providerName}/${model}`
+          : `[optimizer] Sending to ${providerName}/${model}...`);
         console.error('');
 
         // Dry run: show messages and exit

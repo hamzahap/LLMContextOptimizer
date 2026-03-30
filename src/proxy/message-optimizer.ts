@@ -109,15 +109,16 @@ export class MessageOptimizer {
   }
 
   private deduplicateMessages(messages: ChatMessage[]): { messages: ChatMessage[]; changed: boolean; count: number } {
+    const protectedIndices = getProtectedIndices(messages, this.config);
     const seen = new Set<string>();
     const result: ChatMessage[] = [];
     let dedupCount = 0;
 
-    for (const msg of messages) {
+    for (const [index, msg] of messages.entries()) {
       const text = getTextContent(msg.content);
       const key = `${msg.role}:${text.slice(0, 200)}`;
 
-      if (seen.has(key) && text.length > 50) {
+      if (!protectedIndices.has(index) && seen.has(key) && text.length > 50) {
         dedupCount++;
         continue;
       }
@@ -152,12 +153,18 @@ export class MessageOptimizer {
 
     const middleMessages = middleIndices.map((index) => messages[index]);
     const middleSummary = this.summarizeMiddle(middleMessages);
-    actions.push(`compressed ${middleMessages.length} middle turns into summary`);
-
     const summaryMessage: ChatMessage = {
       role: 'user',
       content: `[Previous conversation summary (${middleMessages.length} messages compressed)]\n${middleSummary}`,
     };
+    const originalMiddleTokens = middleMessages.reduce((sum, message) => sum + countContentTokens(message.content), 0);
+    const summaryTokens = countContentTokens(summaryMessage.content);
+
+    if (!middleSummary.trim() || summaryTokens >= originalMiddleTokens) {
+      return messages;
+    }
+
+    actions.push(`compressed ${middleMessages.length} middle turns into summary`);
 
     const middleSet = new Set(middleIndices);
     const firstMiddleIndex = middleIndices[0];
@@ -288,7 +295,7 @@ function getTextContent(content: string | ContentBlock[]): string {
   }
 
   return content
-    .filter((block) => block.type === 'text' && typeof block.text === 'string')
+    .filter(isTextBlock)
     .map((block) => block.text as string)
     .join('\n');
 }
@@ -308,7 +315,7 @@ function transformTextContent(
 
   let changed = false;
   const nextBlocks = original.map((block) => {
-    if (block.type !== 'text' || typeof block.text !== 'string') {
+    if (!isTextBlock(block)) {
       return block;
     }
 
@@ -325,4 +332,37 @@ function transformTextContent(
   });
 
   return { content: nextBlocks, changed };
+}
+
+function getProtectedIndices(messages: ChatMessage[], config: MessageOptimizerConfig): Set<number> {
+  const protectedIndices = new Set<number>();
+  const compressibleIndices: number[] = [];
+
+  for (const [index, message] of messages.entries()) {
+    if (config.preserveSystemMessages && message.role === 'system') {
+      protectedIndices.add(index);
+      continue;
+    }
+
+    compressibleIndices.push(index);
+  }
+
+  const keepFirst = Math.min(config.preserveFirstNTurns, compressibleIndices.length);
+  const keepLast = Math.min(config.preserveLastNTurns, compressibleIndices.length);
+
+  for (const index of compressibleIndices.slice(0, keepFirst)) {
+    protectedIndices.add(index);
+  }
+
+  if (keepLast > 0) {
+    for (const index of compressibleIndices.slice(-keepLast)) {
+      protectedIndices.add(index);
+    }
+  }
+
+  return protectedIndices;
+}
+
+function isTextBlock(block: ContentBlock): block is ContentBlock & { text: string } {
+  return typeof block.text === 'string';
 }

@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.0.3] - 2026-03-30
+
+### Changed
+- Refined `MessageOptimizer` so deduplication respects preserved recent messages and system prompts instead of removing protected duplicates.
+- Improved dry-run CLI logging so `send --dry-run` reports a dry run instead of implying a live API call.
+
+### Fixed
+- Fixed text extraction for block-based message content by treating any block with a string `text` field as textual content, including `input_text` style payloads.
+- Fixed middle-turn summarization to skip replacements that would increase token usage instead of reducing it.
+
 ## [1.0.2] - 2026-03-30
 
 ### Added
