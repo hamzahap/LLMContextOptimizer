@@ -2,6 +2,18 @@
 
 All notable changes to this project are documented in this file.
 
+## [1.0.4] - 2026-03-30
+
+### Changed
+- Rewrote the README to match the actual shipped behavior and CLI surface.
+- Clarified the difference between local-only optimization and provider-backed `send` and `proxy` features.
+- Documented proxy support more precisely for OpenAI chat, OpenAI responses, and Anthropic messages.
+
+### Fixed
+- Removed widespread encoding corruption from the README.
+- Added missing documented flags for `optimize` and `send`.
+- Corrected misleading claims around complete model agnosticism and internal API usage.
+
 ## [1.0.3] - 2026-03-30
 
 ### Changed
